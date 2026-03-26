@@ -1,0 +1,652 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Buddy — Server Test Client</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:        #0d0f12;
+    --bg2:       #13161b;
+    --bg3:       #1a1e26;
+    --border:    rgba(255,255,255,0.07);
+    --border2:   rgba(255,255,255,0.13);
+    --text:      #e2e4e9;
+    --muted:     #5a6070;
+    --accent:    #7c6af7;
+    --accent2:   #5de0b3;
+    --warn:      #f0a04b;
+    --err:       #e05c5c;
+    --mono:      'JetBrains Mono', monospace;
+    --sans:      'DM Sans', sans-serif;
+  }
+
+  html, body { height: 100%; background: var(--bg); color: var(--text); font-family: var(--sans); }
+
+  body {
+    display: grid;
+    grid-template-columns: 260px 1fr 300px;
+    grid-template-rows: 48px 1fr;
+    grid-template-areas: "header header header" "sidebar chat debug";
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  /* ── Header ── */
+  header {
+    grid-area: header;
+    display: flex; align-items: center; gap: 12px;
+    padding: 0 20px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg);
+  }
+  .logo { font-family: var(--mono); font-size: 15px; font-weight: 600; color: var(--accent); letter-spacing: .04em; }
+  .logo span { color: var(--accent2); }
+  .server-url {
+    font-family: var(--mono); font-size: 11px; color: var(--muted);
+    background: var(--bg3); border: 1px solid var(--border); border-radius: 6px;
+    padding: 3px 10px; display: flex; align-items: center; gap: 6px;
+  }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); transition: background .3s; }
+  .dot.online { background: var(--accent2); box-shadow: 0 0 6px var(--accent2); }
+  .dot.error  { background: var(--err); }
+
+  input.url-input {
+    font-family: var(--mono); font-size: 11px; color: var(--text);
+    background: transparent; border: none; outline: none; width: 200px;
+  }
+
+  /* ── Sidebar ── */
+  aside {
+    grid-area: sidebar;
+    border-right: 1px solid var(--border);
+    background: var(--bg2);
+    display: flex; flex-direction: column;
+    overflow: hidden;
+  }
+  .sidebar-section { padding: 14px 16px 10px; border-bottom: 1px solid var(--border); }
+  .sidebar-label { font-size: 10px; font-weight: 500; color: var(--muted); letter-spacing: .1em; text-transform: uppercase; margin-bottom: 10px; }
+
+  .field { margin-bottom: 8px; }
+  .field label { font-size: 11px; color: var(--muted); display: block; margin-bottom: 3px; }
+  .field input, .field textarea, .field select {
+    width: 100%; font-family: var(--sans); font-size: 12px; color: var(--text);
+    background: var(--bg3); border: 1px solid var(--border); border-radius: 6px;
+    padding: 6px 8px; outline: none; transition: border-color .15s;
+  }
+  .field input:focus, .field textarea:focus { border-color: var(--accent); }
+  .field textarea { resize: vertical; min-height: 54px; }
+
+  .btn {
+    font-family: var(--sans); font-size: 12px; font-weight: 500;
+    border: 1px solid var(--border2); border-radius: 6px;
+    padding: 7px 12px; cursor: pointer; transition: all .15s;
+    display: inline-flex; align-items: center; gap: 5px;
+  }
+  .btn-primary { background: var(--accent); color: #fff; border-color: transparent; }
+  .btn-primary:hover { opacity: .85; }
+  .btn-ghost { background: transparent; color: var(--muted); }
+  .btn-ghost:hover { background: var(--bg3); color: var(--text); }
+  .btn-danger { background: transparent; color: var(--err); border-color: var(--err); }
+  .btn-danger:hover { background: rgba(224,92,92,.1); }
+  .btn-sm { padding: 5px 10px; font-size: 11px; }
+
+  .btn-row { display: flex; gap: 6px; flex-wrap: wrap; }
+
+  .emotion-badge {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-family: var(--mono); font-size: 11px;
+    background: var(--bg3); border: 1px solid var(--border2);
+    border-radius: 20px; padding: 3px 10px;
+    transition: all .3s;
+  }
+  .emotion-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); transition: background .3s; }
+
+  /* ── Chat ── */
+  main {
+    grid-area: chat;
+    display: flex; flex-direction: column;
+    background: var(--bg);
+    overflow: hidden;
+  }
+
+  .chat-log {
+    flex: 1; overflow-y: auto; padding: 20px;
+    display: flex; flex-direction: column; gap: 14px;
+  }
+
+  .chat-log::-webkit-scrollbar { width: 4px; }
+  .chat-log::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+  .msg {
+    max-width: 75%; padding: 10px 14px; border-radius: 10px;
+    font-size: 14px; line-height: 1.6;
+    animation: fadeUp .2s ease forwards;
+  }
+  @keyframes fadeUp { from { opacity:0; transform: translateY(6px); } to { opacity:1; transform: none; } }
+
+  .msg-user  { align-self: flex-end; background: var(--accent); color: #fff; border-bottom-right-radius: 3px; }
+  .msg-buddy { align-self: flex-start; background: var(--bg3); border: 1px solid var(--border); border-bottom-left-radius: 3px; }
+  .msg-system { align-self: center; font-family: var(--mono); font-size: 11px; color: var(--muted); background: transparent; border: none; padding: 2px 0; }
+  .msg-error { align-self: center; font-size: 12px; color: var(--err); background: rgba(224,92,92,.08); border: 1px solid rgba(224,92,92,.2); border-radius: 6px; padding: 8px 12px; }
+
+  .msg-buddy .emotion-tag { font-family: var(--mono); font-size: 10px; color: var(--muted); margin-top: 5px; display: block; }
+
+  .audio-ctrl {
+    margin-top: 8px; display: flex; align-items: center; gap: 8px;
+  }
+  .play-btn {
+    width: 26px; height: 26px; border-radius: 50%;
+    background: var(--accent); border: none; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 10px; color: #fff; flex-shrink: 0;
+    transition: opacity .15s;
+  }
+  .play-btn:hover { opacity: .8; }
+  .wave-bars { display: flex; gap: 2px; align-items: center; height: 16px; }
+  .wave-bar { width: 2px; border-radius: 1px; background: var(--accent2); opacity: .5; }
+  .wave-bar.active { animation: wavePulse .6s ease-in-out infinite alternate; opacity: 1; }
+  @keyframes wavePulse { from { height: 3px; } to { height: 14px; } }
+
+  .typing { align-self: flex-start; }
+  .typing-dots { display: flex; gap: 4px; padding: 12px 16px; background: var(--bg3); border: 1px solid var(--border); border-radius: 10px; border-bottom-left-radius: 3px; }
+  .typing-dots span { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); animation: blink 1.2s infinite; }
+  .typing-dots span:nth-child(2) { animation-delay: .2s; }
+  .typing-dots span:nth-child(3) { animation-delay: .4s; }
+  @keyframes blink { 0%,80%,100%{opacity:.2} 40%{opacity:1} }
+
+  .input-bar {
+    padding: 14px 20px; border-top: 1px solid var(--border);
+    display: flex; gap: 10px; align-items: flex-end;
+  }
+  .input-bar textarea {
+    flex: 1; font-family: var(--sans); font-size: 14px; color: var(--text);
+    background: var(--bg3); border: 1px solid var(--border); border-radius: 8px;
+    padding: 10px 14px; resize: none; outline: none; min-height: 42px; max-height: 120px;
+    transition: border-color .15s; line-height: 1.5;
+  }
+  .input-bar textarea:focus { border-color: var(--accent); }
+  .send-btn {
+    width: 42px; height: 42px; border-radius: 8px; flex-shrink: 0;
+    background: var(--accent); border: none; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; color: #fff;
+    font-size: 16px; transition: opacity .15s;
+  }
+  .send-btn:hover { opacity: .85; }
+  .send-btn:disabled { opacity: .3; cursor: not-allowed; }
+
+  /* ── Debug Panel ── */
+  .debug {
+    grid-area: debug;
+    border-left: 1px solid var(--border);
+    background: var(--bg2);
+    display: flex; flex-direction: column;
+    overflow: hidden;
+    font-family: var(--mono);
+  }
+  .debug-header {
+    padding: 10px 14px; border-bottom: 1px solid var(--border);
+    font-size: 10px; font-weight: 600; color: var(--muted); letter-spacing: .1em; text-transform: uppercase;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .debug-log {
+    flex: 1; overflow-y: auto; padding: 10px 14px;
+    font-size: 11px; color: var(--muted); line-height: 1.7;
+    white-space: pre-wrap; word-break: break-all;
+  }
+  .debug-log::-webkit-scrollbar { width: 3px; }
+  .debug-log::-webkit-scrollbar-thumb { background: var(--border); }
+  .log-line { margin-bottom: 2px; }
+  .log-line.info  { color: var(--accent2); }
+  .log-line.warn  { color: var(--warn); }
+  .log-line.err   { color: var(--err); }
+  .log-line.data  { color: #8899cc; }
+  .log-line.dim   { color: var(--muted); }
+
+  .status-bar {
+    padding: 8px 14px; border-top: 1px solid var(--border);
+    font-size: 10px; color: var(--muted);
+    display: flex; justify-content: space-between;
+  }
+</style>
+</head>
+<body>
+
+<!-- ── Header ── -->
+<header>
+  <div class="logo">BUDDY<span>.</span>DEV</div>
+  <div class="server-url">
+    <div class="dot" id="statusDot"></div>
+    <input class="url-input" id="serverUrl" value="http://localhost:3000" placeholder="http://localhost:3000">
+  </div>
+  <button class="btn btn-ghost btn-sm" onclick="checkHealth()">ping</button>
+  <div style="flex:1"></div>
+  <div class="emotion-badge" id="emotionBadge">
+    <div class="emotion-dot" id="emotionDot"></div>
+    <span id="emotionLabel">neutral</span>
+  </div>
+</header>
+
+<!-- ── Sidebar ── -->
+<aside>
+  <div class="sidebar-section">
+    <div class="sidebar-label">Session</div>
+    <div class="field">
+      <label>Session ID</label>
+      <input id="sessionId" value="test-session-01" placeholder="e.g. test-session-01">
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-ghost btn-sm" onclick="loadHistory()">load history</button>
+      <button class="btn btn-danger btn-sm" onclick="clearSession()">clear</button>
+    </div>
+  </div>
+
+  <div class="sidebar-section">
+    <div class="sidebar-label">User Profile</div>
+    <div class="field">
+      <label>Name</label>
+      <input id="profileName" placeholder="Arjun">
+    </div>
+    <div class="field">
+      <label>Age</label>
+      <input id="profileAge" type="number" placeholder="24">
+    </div>
+    <div class="field">
+      <label>Hobbies (comma separated)</label>
+      <input id="profileHobbies" placeholder="game dev, anime, chess">
+    </div>
+    <div class="field">
+      <label>Occupation</label>
+      <input id="profileOccupation" placeholder="student">
+    </div>
+    <button class="btn btn-primary btn-sm" style="width:100%;justify-content:center;" onclick="saveProfile()">save profile</button>
+  </div>
+
+  <div class="sidebar-section" style="flex:1">
+    <div class="sidebar-label">Audio</div>
+    <div class="field">
+      <label>Autoplay TTS responses</label>
+      <select id="autoplay">
+        <option value="true" selected>Yes — autoplay each sentence</option>
+        <option value="false">No — manual play buttons</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Playback volume</label>
+      <input type="range" id="volume" min="0" max="1" step="0.05" value="0.85"
+        style="padding:0;background:transparent;border:none;cursor:pointer;">
+    </div>
+  </div>
+</aside>
+
+<!-- ── Chat ── -->
+<main>
+  <div class="chat-log" id="chatLog">
+    <div class="msg msg-system">Buddy server test client — v1.0</div>
+    <div class="msg msg-system">Set your session ID, optionally save a profile, then start chatting ↓</div>
+  </div>
+  <div class="input-bar">
+    <textarea id="msgInput" rows="1" placeholder="Type a message and press Enter…"
+      onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
+    <button class="send-btn" id="sendBtn" onclick="sendMessage()">↑</button>
+  </div>
+</main>
+
+<!-- ── Debug ── -->
+<div class="debug">
+  <div class="debug-header">
+    <span>request log</span>
+    <button class="btn btn-ghost btn-sm" style="font-family:var(--mono);font-size:10px;" onclick="clearLog()">clear</button>
+  </div>
+  <div class="debug-log" id="debugLog"></div>
+  <div class="status-bar">
+    <span id="tokenCount">0 tokens</span>
+    <span id="latencyLabel">—</span>
+  </div>
+</div>
+
+<script>
+// ─── State ───────────────────────────────────────────────────────────────────
+let audioQueue = [];
+let isPlayingQueue = false;
+let sentenceCount = 0;
+
+// ─── Utilities ───────────────────────────────────────────────────────────────
+function base() { return document.getElementById('serverUrl').value.replace(/\/$/, ''); }
+function sid()  { return document.getElementById('sessionId').value.trim(); }
+
+function log(msg, type = 'dim') {
+  const el = document.getElementById('debugLog');
+  const time = new Date().toLocaleTimeString('en', { hour12: false });
+  const line = document.createElement('div');
+  line.className = `log-line ${type}`;
+  line.textContent = `[${time}] ${msg}`;
+  el.appendChild(line);
+  el.scrollTop = el.scrollHeight;
+}
+
+function clearLog() { document.getElementById('debugLog').innerHTML = ''; }
+
+function autoResize(el) {
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+}
+
+function handleKey(e) {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+}
+
+function setDot(state) {
+  const dot = document.getElementById('statusDot');
+  dot.className = 'dot ' + (state || '');
+}
+
+function setEmotion(emotion) {
+  const colors = {
+    happy: '#5de0b3', sad: '#7c6af7', curious: '#f0a04b',
+    smirk: '#e066c2', thinking: '#5baef7', neutral: '#7c6af7'
+  };
+  document.getElementById('emotionLabel').textContent = emotion || 'neutral';
+  document.getElementById('emotionDot').style.background = colors[emotion] || colors.neutral;
+}
+
+// ─── Chat UI helpers ──────────────────────────────────────────────────────────
+function appendMsg(text, type, emotionTag) {
+  const log = document.getElementById('chatLog');
+  const div = document.createElement('div');
+  div.className = `msg msg-${type}`;
+  div.innerHTML = text;
+  if (emotionTag) {
+    const tag = document.createElement('span');
+    tag.className = 'emotion-tag';
+    tag.textContent = `[emotion:${emotionTag}]`;
+    div.appendChild(tag);
+  }
+  log.appendChild(div);
+  log.scrollTop = log.scrollHeight;
+  return div;
+}
+
+function showTyping() {
+  const log = document.getElementById('chatLog');
+  const div = document.createElement('div');
+  div.className = 'typing'; div.id = 'typingIndicator';
+  div.innerHTML = '<div class="typing-dots"><span></span><span></span><span></span></div>';
+  log.appendChild(div);
+  log.scrollTop = log.scrollHeight;
+}
+
+function hideTyping() {
+  const el = document.getElementById('typingIndicator');
+  if (el) el.remove();
+}
+
+// ─── Audio ───────────────────────────────────────────────────────────────────
+function addAudioToMsg(msgEl, audioB64, sentence) {
+  const wrap = document.createElement('div');
+  wrap.className = 'audio-ctrl';
+
+  const audioData = 'data:audio/mp3;base64,' + audioB64;
+
+  const playBtn = document.createElement('button');
+  playBtn.className = 'play-btn';
+  playBtn.innerHTML = '▶';
+  playBtn.onclick = () => {
+    const audio = new Audio(audioData);
+    audio.volume = parseFloat(document.getElementById('volume').value);
+    setWaveActive(bars, true);
+    audio.onended = () => setWaveActive(bars, false);
+    audio.play();
+  };
+
+  const bars = document.createElement('div');
+  bars.className = 'wave-bars';
+  for (let i = 0; i < 5; i++) {
+    const b = document.createElement('div');
+    b.className = 'wave-bar';
+    b.style.height = (4 + Math.random() * 8) + 'px';
+    b.style.animationDelay = (i * .12) + 's';
+    bars.appendChild(b);
+  }
+
+  wrap.appendChild(playBtn);
+  wrap.appendChild(bars);
+  msgEl.appendChild(wrap);
+
+  return audioData;
+}
+
+function setWaveActive(barsEl, active) {
+  barsEl.querySelectorAll('.wave-bar').forEach(b => {
+    b.classList.toggle('active', active);
+  });
+}
+
+async function playAudio(audioData) {
+  return new Promise((resolve) => {
+    const audio = new Audio(audioData);
+    audio.volume = parseFloat(document.getElementById('volume').value);
+    audio.onended = resolve;
+    audio.onerror = resolve;
+    audio.play().catch(resolve);
+  });
+}
+
+async function drainQueue() {
+  if (isPlayingQueue) return;
+  isPlayingQueue = true;
+  while (audioQueue.length > 0) {
+    const { audioData, bars } = audioQueue.shift();
+    setWaveActive(bars, true);
+    await playAudio(audioData);
+    setWaveActive(bars, false);
+  }
+  isPlayingQueue = false;
+}
+
+// ─── API calls ────────────────────────────────────────────────────────────────
+async function checkHealth() {
+  try {
+    log(`GET ${base()}/health`, 'info');
+    const res = await fetch(`${base()}/health`);
+    const data = await res.json();
+    log(`↳ ${JSON.stringify(data)}`, 'data');
+    setDot('online');
+  } catch (e) {
+    log(`↳ connection failed: ${e.message}`, 'err');
+    setDot('error');
+  }
+}
+
+async function saveProfile() {
+  const profile = {
+    session_id: sid(),
+    name:       document.getElementById('profileName').value,
+    age:        parseInt(document.getElementById('profileAge').value) || null,
+    hobbies:    document.getElementById('profileHobbies').value.split(',').map(s => s.trim()).filter(Boolean),
+    occupation: document.getElementById('profileOccupation').value,
+  };
+  log(`POST /profile  ${JSON.stringify(profile)}`, 'info');
+  try {
+    const res = await fetch(`${base()}/profile`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(profile),
+    });
+    const data = await res.json();
+    log(`↳ ${JSON.stringify(data)}`, 'data');
+    appendMsg('Profile saved — Buddy will use your info in responses.', 'system');
+  } catch (e) {
+    log(`↳ error: ${e.message}`, 'err');
+  }
+}
+
+async function clearSession() {
+  log(`DELETE /session/${sid()}`, 'warn');
+  try {
+    await fetch(`${base()}/session/${sid()}`, { method: 'DELETE' });
+    log('↳ session cleared', 'data');
+    document.getElementById('chatLog').innerHTML = '';
+    appendMsg('Session cleared.', 'system');
+    sentenceCount = 0;
+    document.getElementById('tokenCount').textContent = '0 tokens';
+  } catch (e) {
+    log(`↳ error: ${e.message}`, 'err');
+  }
+}
+
+async function loadHistory() {
+  log(`GET /history/${sid()}`, 'info');
+  try {
+    const res = await fetch(`${base()}/history/${sid()}`);
+    const data = await res.json();
+    log(`↳ ${data.history.length} messages in history`, 'data');
+    if (data.history.length === 0) {
+      appendMsg('No history found for this session.', 'system');
+    } else {
+      appendMsg(`Loaded ${data.history.length} messages from history.`, 'system');
+      data.history.forEach(m => {
+        appendMsg(m.content, m.role === 'user' ? 'user' : 'buddy');
+      });
+    }
+  } catch (e) {
+    log(`↳ error: ${e.message}`, 'err');
+  }
+}
+
+// ─── Main send ────────────────────────────────────────────────────────────────
+async function sendMessage() {
+  const input = document.getElementById('msgInput');
+  const message = input.value.trim();
+  if (!message) return;
+
+  input.value = '';
+  input.style.height = 'auto';
+  document.getElementById('sendBtn').disabled = true;
+
+  appendMsg(message, 'user');
+  showTyping();
+  audioQueue = [];
+
+  const t0 = Date.now();
+  log(`POST /chat  session=${sid()}  msg="${message.slice(0,60)}${message.length>60?'…':''}"`, 'info');
+
+  // Create the buddy message container now (sentences will be appended to it)
+  let buddyMsgEl = null;
+  let fullText = '';
+  let finalEmotion = 'neutral';
+  let firstChunkTime = null;
+  sentenceCount = 0;
+
+  try {
+    const res = await fetch(`${base()}/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ session_id: sid(), message }),
+    });
+
+    if (!res.ok) {
+      const err = await res.text();
+      throw new Error(`HTTP ${res.status}: ${err}`);
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let sseBuffer = '';
+
+    hideTyping();
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+
+      sseBuffer += decoder.decode(value, { stream: true });
+      const lines = sseBuffer.split('\n');
+      sseBuffer = lines.pop(); // keep incomplete line
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        const jsonStr = line.slice(6).trim();
+        if (!jsonStr) continue;
+
+        let event;
+        try { event = JSON.parse(jsonStr); } catch { continue; }
+
+        if (event.type === 'audio') {
+          if (!firstChunkTime) {
+            firstChunkTime = Date.now() - t0;
+            log(`↳ first audio chunk: ${firstChunkTime}ms`, 'info');
+          }
+
+          sentenceCount++;
+          finalEmotion = event.emotion || 'neutral';
+          setEmotion(finalEmotion);
+          fullText += (fullText ? ' ' : '') + event.sentence;
+
+          // Create or update buddy message
+          if (!buddyMsgEl) {
+            buddyMsgEl = document.createElement('div');
+            buddyMsgEl.className = 'msg msg-buddy';
+            document.getElementById('chatLog').appendChild(buddyMsgEl);
+          }
+
+          // Add sentence text
+          const sentenceSpan = document.createElement('span');
+          sentenceSpan.textContent = (buddyMsgEl.querySelector('span') ? ' ' : '') + event.sentence;
+          buddyMsgEl.appendChild(sentenceSpan);
+
+          // Add audio control per sentence
+          const audioData = addAudioToMsg(buddyMsgEl, event.audio_b64, event.sentence);
+
+          const bars = buddyMsgEl.lastElementChild.querySelector('.wave-bars');
+          const autoplay = document.getElementById('autoplay').value === 'true';
+          if (autoplay) {
+            audioQueue.push({ audioData, bars });
+            drainQueue();
+          }
+
+          document.getElementById('chatLog').scrollTop = document.getElementById('chatLog').scrollHeight;
+          log(`↳ sentence ${sentenceCount}: "${event.sentence.slice(0,50)}…" [${event.emotion}]`, 'data');
+
+        } else if (event.type === 'done') {
+          // Add emotion tag to the message
+          if (buddyMsgEl) {
+            const tag = document.createElement('span');
+            tag.className = 'emotion-tag';
+            tag.textContent = `[emotion:${event.emotion}]`;
+            buddyMsgEl.appendChild(tag);
+          }
+          const totalMs = Date.now() - t0;
+          log(`↳ done — ${sentenceCount} sentences, ${totalMs}ms total`, 'info');
+          document.getElementById('latencyLabel').textContent = `${firstChunkTime || totalMs}ms first chunk`;
+          document.getElementById('tokenCount').textContent = `${fullText.split(' ').length} words`;
+
+        } else if (event.type === 'error') {
+          hideTyping();
+          appendMsg(`Server error: ${event.message}`, 'error');
+          log(`↳ server error: ${event.message}`, 'err');
+        }
+      }
+    }
+
+  } catch (e) {
+    hideTyping();
+    appendMsg(`Request failed: ${e.message}`, 'error');
+    log(`↳ fetch error: ${e.message}`, 'err');
+    setDot('error');
+  } finally {
+    document.getElementById('sendBtn').disabled = false;
+    input.focus();
+  }
+}
+
+// ─── Init ─────────────────────────────────────────────────────────────────────
+checkHealth();
+document.getElementById('msgInput').focus();
+</script>
+</body>
+</html>
