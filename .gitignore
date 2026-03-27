@@ -1,24 +1,20 @@
 # Dependencies
 node_modules/
- 
+
 # Environment variables — never commit your API keys
 .env
- 
+
 # Google Cloud credentials — never commit this
 google-credentials.json
- 
-# SQLite database — local data, no need to version
-buddy.db
- 
+
 # OS files
 .DS_Store
 Thumbs.db
- 
+
 # Logs
 *.log
 npm-debug.log*
- 
+
 # Editor
 .vscode/
 .idea/
- 

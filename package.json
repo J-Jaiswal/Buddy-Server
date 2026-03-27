@@ -1,7 +1,7 @@
 {
   "name": "buddy-server",
   "version": "1.0.0",
-  "description": "Buddy AI Companion — Express backend",
+  "description": "Buddy AI Companion — Express + MongoDB backend",
   "type": "module",
   "main": "server.js",
   "scripts": {
@@ -11,12 +11,12 @@
   "dependencies": {
     "@google-cloud/speech": "^6.7.0",
     "@google-cloud/text-to-speech": "^5.3.0",
-    "better-sqlite3": "^9.6.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
     "groq-sdk": "^0.11.0",
-    "multer": "^1.4.5-lts.1"
+    "mongoose": "^8.4.0",
+    "multer": "^1.4.5-lts.2"
   },
   "devDependencies": {
     "nodemon": "^3.1.4"
