@@ -1,5 +1,3 @@
-/* depricated */
-
 <!doctype html>
 <html lang="en">
   <head>
@@ -52,7 +50,7 @@
         font-family: var(--sans);
       }
 
-      /* ── Header ── */
+      /* Header */
       header {
         grid-area: hdr;
         display: flex;
@@ -132,14 +130,6 @@
         padding: 5px 10px;
         font-size: 11px;
       }
-      .btn-primary {
-        background: var(--accent);
-        color: #fff;
-        border-color: transparent;
-      }
-      .btn-primary:hover {
-        opacity: 0.85;
-      }
       .emotion-badge {
         display: flex;
         align-items: center;
@@ -158,8 +148,20 @@
         background: var(--accent);
         transition: background 0.3s;
       }
+      .char-badge {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-family: var(--mono);
+        font-size: 11px;
+        background: var(--bg3);
+        border: 1px solid var(--border2);
+        border-radius: 20px;
+        padding: 3px 10px;
+        color: var(--green);
+      }
 
-      /* ── Sidebar ── */
+      /* Sidebar */
       aside {
         grid-area: side;
         border-right: 1px solid var(--border);
@@ -181,7 +183,7 @@
         margin-bottom: 8px;
       }
 
-      /* ── Service pills ── */
+      /* Pills */
       .pills {
         display: flex;
         flex-wrap: wrap;
@@ -241,9 +243,9 @@
         display: block;
       }
 
-      /* ── Notices ── */
+      /* Notices */
       .notice {
-        margin: 8px 14px;
+        margin: 8px 0 0;
         padding: 8px 12px;
         border-radius: 7px;
         font-size: 11px;
@@ -260,7 +262,7 @@
         color: var(--warn);
       }
 
-      /* ── Audio sidebar ── */
+      /* Fields */
       .field {
         margin-bottom: 7px;
       }
@@ -283,8 +285,52 @@
         outline: none;
         transition: border-color 0.15s;
       }
+      .field input:focus,
+      .field select:focus {
+        border-color: var(--accent);
+      }
 
-      /* ── Chat ── */
+      /* Character cards */
+      .char-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 5px;
+      }
+      .char-card {
+        padding: 7px 8px;
+        border-radius: 7px;
+        border: 1px solid var(--border);
+        cursor: pointer;
+        transition: all 0.15s;
+        text-align: center;
+        font-size: 11px;
+      }
+      .char-card:hover {
+        background: var(--bg3);
+        border-color: var(--border2);
+      }
+      .char-card.active {
+        border-color: var(--accent);
+        background: rgba(124, 106, 247, 0.1);
+        color: var(--accent);
+      }
+      .char-card .char-emoji {
+        font-size: 18px;
+        display: block;
+        margin-bottom: 3px;
+      }
+      .char-card .char-name {
+        font-weight: 500;
+        display: block;
+      }
+      .char-card .char-desc {
+        color: var(--muted);
+        font-size: 10px;
+        display: block;
+        margin-top: 2px;
+      }
+
+      /* Chat */
       main {
         grid-area: chat;
         display: flex;
@@ -306,7 +352,6 @@
         background: var(--border2);
         border-radius: 2px;
       }
-
       .msg {
         max-width: 76%;
         padding: 10px 14px;
@@ -382,7 +427,7 @@
         padding: 2px 7px;
       }
 
-      /* Audio controls */
+      /* Audio */
       .audio-ctrl {
         margin-top: 7px;
         display: flex;
@@ -515,7 +560,7 @@
         cursor: not-allowed;
       }
 
-      /* ── Debug panel ── */
+      /* Debug */
       .dbg {
         grid-area: dbg;
         border-left: 1px solid var(--border);
@@ -587,6 +632,10 @@
       </div>
       <button class="btn btn-sm" onclick="checkHealth()">ping</button>
       <div style="flex: 1"></div>
+      <div class="char-badge">
+        <span id="charBadgeIcon">🤖</span>
+        <span id="charBadgeLabel">buddy</span>
+      </div>
       <div class="emotion-badge">
         <div class="emotion-dot" id="emotionDot"></div>
         <span id="emotionLabel">neutral</span>
@@ -608,13 +657,75 @@
             tts
             <div class="pill-tip" id="tip-tts">checking...</div>
           </div>
+          <div class="pill" id="pill-mongo">
+            <div class="pdot"></div>
+            mongo
+            <div class="pill-tip" id="tip-mongo">checking...</div>
+          </div>
         </div>
         <div class="notice warn" id="notice-tts">
           ⚠ TTS down — responses are text-only.
         </div>
         <div class="notice warn" id="notice-groq">
-          ⚠ Groq down — chat won't work until key is fixed. Server retries every
-          60s.
+          ⚠ Groq down — chat won't work. Server retries every 60s.
+        </div>
+        <div class="notice warn" id="notice-mongo">
+          ⚠ MongoDB down — chat history won't be saved.
+        </div>
+      </div>
+
+      <!-- Identity -->
+      <div class="s-section">
+        <div class="s-label">Identity</div>
+        <div class="field">
+          <label>User ID <span style="color: var(--err)">*</span></label>
+          <input
+            type="text"
+            id="userId"
+            placeholder="e.g. player_abc123"
+            value="player_001"
+          />
+        </div>
+        <div class="field">
+          <label>Display Name (optional)</label>
+          <input type="text" id="userName" placeholder="e.g. Alex" />
+        </div>
+      </div>
+
+      <!-- Character -->
+      <div class="s-section">
+        <div class="s-label">Character</div>
+        <div class="char-grid" id="charGrid">
+          <div
+            class="char-card active"
+            data-id="buddy"
+            onclick="selectChar(this)"
+          >
+            <span class="char-emoji">🤖</span>
+            <span class="char-name">Buddy</span>
+            <span class="char-desc">Warm & witty</span>
+          </div>
+          <div class="char-card" data-id="mentor" onclick="selectChar(this)">
+            <span class="char-emoji">🎓</span>
+            <span class="char-name">Mentor</span>
+            <span class="char-desc">Wise teacher</span>
+          </div>
+          <div class="char-card" data-id="villain" onclick="selectChar(this)">
+            <span class="char-emoji">🌑</span>
+            <span class="char-name">Shadow</span>
+            <span class="char-desc">Dry antihero</span>
+          </div>
+          <div class="char-card" data-id="nico" onclick="selectChar(this)">
+            <span class="char-emoji">👩🏻</span>
+            <span class="char-name">Nico Robin</span>
+            <span class="char-desc">Amazing Lady</span>
+          </div>
+          <div class="char-card" data-id="tony" onclick="selectChar(this)">
+            <span class="char-emoji">🦸🏻‍♂️</span>
+            <span class="char-name">Tony Stark</span>
+            <span class="char-desc">Iron Man</span>
+          </div>
+          <!-- Add more cards here matching characters/registry.js -->
         </div>
       </div>
 
@@ -646,12 +757,24 @@
           />
         </div>
       </div>
+
+      <!-- History -->
+      <div class="s-section">
+        <div class="s-label">History</div>
+        <button
+          class="btn btn-sm"
+          style="width: 100%; justify-content: center"
+          onclick="loadHistory()"
+        >
+          📜 Load chat history
+        </button>
+      </div>
     </aside>
 
     <main>
       <div class="chat-log" id="chatLog">
         <div class="msg msg-system">
-          Buddy test client — connect to http://localhost:3000 and press ping
+          Select a character, enter your User ID, then type a message.
         </div>
       </div>
       <div class="input-bar">
@@ -684,16 +807,27 @@
     </div>
 
     <script>
-      // ─── State ────────────────────────────────────────────────────────────────────
+      // ─── State ────────────────────────────────────────────────────────────────
       let audioQueue = [],
         isPlaying = false,
         sentCount = 0;
       let ttsAvailable = false;
+      let activeCharId = "buddy";
 
-      // ─── Utils ────────────────────────────────────────────────────────────────────
+      const CHAR_META = {
+        buddy: { emoji: "🤖", name: "Buddy" },
+        mentor: { emoji: "🎓", name: "Mentor" },
+        villain: { emoji: "🌑", name: "Shadow" },
+        // keep in sync with characters/registry.js
+      };
+
+      // ─── Utils ────────────────────────────────────────────────────────────────
       const base = () =>
         document.getElementById("serverUrl").value.replace(/\/$/, "");
       const vol = () => parseFloat(document.getElementById("volume").value);
+      const getUserId = () => document.getElementById("userId").value.trim();
+      const getUserName = () =>
+        document.getElementById("userName").value.trim();
 
       function log(msg, type = "") {
         const el = document.getElementById("dbgLog");
@@ -731,7 +865,27 @@
           colors[e] || colors.neutral;
       }
 
-      // ─── Service status UI ────────────────────────────────────────────────────────
+      // ─── Character selector ───────────────────────────────────────────────────
+      function selectChar(card) {
+        document
+          .querySelectorAll(".char-card")
+          .forEach((c) => c.classList.remove("active"));
+        card.classList.add("active");
+        activeCharId = card.dataset.id;
+        const meta = CHAR_META[activeCharId] || {
+          emoji: "🤖",
+          name: activeCharId,
+        };
+        document.getElementById("charBadgeIcon").textContent = meta.emoji;
+        document.getElementById("charBadgeLabel").textContent =
+          meta.name.toLowerCase();
+        log(`Character → ${activeCharId}`, "info");
+        // Clear chat on switch — new conversation context
+        document.getElementById("chatLog").innerHTML =
+          `<div class="msg msg-system">Switched to ${meta.name}. Start chatting!</div>`;
+      }
+
+      // ─── Service status UI ────────────────────────────────────────────────────
       function applyServiceStatus(services) {
         const allOk = Object.values(services).every((s) => s.ok);
         document.getElementById("hdrDot").className =
@@ -748,6 +902,7 @@
         ttsAvailable = !!services.tts?.ok;
         setNotice("tts", !services.tts?.ok);
         setNotice("groq", !services.groq?.ok);
+        setNotice("mongo", !services.mongo?.ok);
       }
 
       function setNotice(id, visible) {
@@ -755,25 +910,25 @@
         if (el) el.classList.toggle("visible", visible);
       }
 
-      // ─── Chat helpers ─────────────────────────────────────────────────────────────
+      // ─── Chat helpers ─────────────────────────────────────────────────────────
       function appendMsg(html, type) {
-        const log = document.getElementById("chatLog");
+        const chatLog = document.getElementById("chatLog");
         const div = document.createElement("div");
         div.className = `msg msg-${type}`;
         div.innerHTML = html;
-        log.appendChild(div);
-        log.scrollTop = log.scrollHeight;
+        chatLog.appendChild(div);
+        chatLog.scrollTop = chatLog.scrollHeight;
         return div;
       }
 
       function showTyping() {
-        const log = document.getElementById("chatLog");
+        const chatLog = document.getElementById("chatLog");
         const d = document.createElement("div");
         d.id = "typing";
         d.innerHTML =
           '<div class="typing-dots"><span></span><span></span><span></span></div>';
-        log.appendChild(d);
-        log.scrollTop = log.scrollHeight;
+        chatLog.appendChild(d);
+        chatLog.scrollTop = chatLog.scrollHeight;
       }
 
       function hideTyping() {
@@ -781,7 +936,7 @@
         if (el) el.remove();
       }
 
-      // ─── Audio ────────────────────────────────────────────────────────────────────
+      // ─── Audio ────────────────────────────────────────────────────────────────
       function addAudioControls(msgEl, b64) {
         const audioData = "data:audio/mp3;base64," + b64;
         const wrap = document.createElement("div");
@@ -844,10 +999,10 @@
         isPlaying = false;
       }
 
-      // ─── API calls ────────────────────────────────────────────────────────────────
+      // ─── API: health ──────────────────────────────────────────────────────────
       async function checkHealth() {
         try {
-          log(`GET /health`, "info");
+          log("GET /health", "info");
           const res = await fetch(`${base()}/health`);
           const data = await res.json();
           log(
@@ -871,11 +1026,68 @@
         }
       }
 
-      // ─── Main send ────────────────────────────────────────────────────────────────
+      // ─── API: load history ────────────────────────────────────────────────────
+      async function loadHistory() {
+        const userId = getUserId();
+        if (!userId) {
+          alert("Enter a User ID first.");
+          return;
+        }
+
+        try {
+          log(
+            `GET /history?userId=${userId}&characterId=${activeCharId}`,
+            "info",
+          );
+          const res = await fetch(
+            `${base()}/history?userId=${encodeURIComponent(userId)}&characterId=${encodeURIComponent(activeCharId)}&limit=20`,
+          );
+          const data = await res.json();
+
+          if (!data.messages || data.messages.length === 0) {
+            appendMsg(
+              `No history found for <b>${userId}</b> + <b>${activeCharId}</b>.`,
+              "system",
+            );
+            return;
+          }
+
+          document.getElementById("chatLog").innerHTML = "";
+          appendMsg(
+            `📜 Loaded last ${data.messages.length} messages`,
+            "system",
+          );
+
+          for (const msg of data.messages) {
+            if (msg.role === "user") {
+              appendMsg(msg.content, "user");
+            } else {
+              const el = appendMsg(msg.content, "buddy");
+              if (msg.emotion) {
+                const tag = document.createElement("span");
+                tag.className = "emotion-tag";
+                tag.textContent = `[emotion:${msg.emotion}]`;
+                el.appendChild(tag);
+              }
+            }
+          }
+          log(`↳ ${data.messages.length} messages loaded`, "info");
+        } catch (e) {
+          log(`↳ history error: ${e.message}`, "err");
+        }
+      }
+
+      // ─── API: send message ────────────────────────────────────────────────────
       async function sendMessage() {
         const input = document.getElementById("msgInput");
         const message = input.value.trim();
         if (!message) return;
+
+        const userId = getUserId();
+        if (!userId) {
+          alert("Please enter a User ID in the sidebar before chatting.");
+          return;
+        }
 
         input.value = "";
         input.style.height = "auto";
@@ -888,7 +1100,7 @@
 
         const t0 = Date.now();
         log(
-          `POST /chat  "${message.slice(0, 60)}${message.length > 60 ? "…" : ""}"`,
+          `POST /chat [${activeCharId}] "${message.slice(0, 60)}${message.length > 60 ? "…" : ""}"`,
           "info",
         );
 
@@ -916,7 +1128,12 @@
           const res = await fetch(`${base()}/chat`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ message }),
+            body: JSON.stringify({
+              message,
+              userId,
+              characterId: activeCharId,
+              userName: getUserName() || undefined,
+            }),
           });
 
           if (!res.ok) {
@@ -949,7 +1166,21 @@
                 continue;
               }
 
-              if (evt.type === "audio") {
+              if (evt.type === "character") {
+                // Server confirmed character — update badge
+                const meta = CHAR_META[evt.characterId] || {
+                  emoji: "🤖",
+                  name: evt.characterName,
+                };
+                document.getElementById("charBadgeIcon").textContent =
+                  meta.emoji;
+                document.getElementById("charBadgeLabel").textContent =
+                  evt.characterName.toLowerCase();
+                log(
+                  `↳ character: ${evt.characterId} (${evt.characterName})`,
+                  "data",
+                );
+              } else if (evt.type === "audio") {
                 if (!firstChunkMs) {
                   firstChunkMs = Date.now() - t0;
                   log(`↳ first audio: ${firstChunkMs}ms`, "info");
@@ -1003,7 +1234,7 @@
                 }
                 const totalMs = Date.now() - t0;
                 log(
-                  `↳ done — ${sentCount} sentences, ${totalMs}ms total`,
+                  `↳ done — ${sentCount} sentences, ${totalMs}ms | tts:${evt.tts_active}`,
                   "info",
                 );
                 document.getElementById("latency").textContent =
@@ -1031,7 +1262,7 @@
         }
       }
 
-      // ─── Init ─────────────────────────────────────────────────────────────────────
+      // ─── Init ─────────────────────────────────────────────────────────────────
       checkHealth();
       setInterval(checkHealth, 30_000);
       document.getElementById("msgInput").focus();

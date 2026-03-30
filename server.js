@@ -1,21 +1,18 @@
+// depricated
+
 import express from "express";
 import cors from "cors";
-import multer from "multer";
 import Groq from "groq-sdk";
-import textToSpeech from "@google-cloud/text-to-speech";
-import speech from "@google-cloud/speech";
-import mongoose from "mongoose";
 import dotenv from "dotenv";
 
 dotenv.config();
 
 // ─── Startup Env Check ────────────────────────────────────────────────────────
-// Warn about missing keys but never crash — fallbacks handle each failure.
 
 const REQUIRED_KEYS = {
-  MONGODB_URI: "MongoDB connection string (Atlas → Connect → Drivers)",
   GROQ_API_KEY: "Groq API key (console.groq.com)",
-  GOOGLE_APPLICATION_CREDENTIALS: "Path to Google service account JSON file",
+  GOOGLE_API_KEY:
+    "Google Cloud API key (console.cloud.google.com → APIs & Services → Credentials)",
 };
 
 for (const [key, hint] of Object.entries(REQUIRED_KEYS)) {
@@ -26,27 +23,10 @@ for (const [key, hint] of Object.entries(REQUIRED_KEYS)) {
 }
 
 // ─── Service Status ───────────────────────────────────────────────────────────
-// Each service degrades independently. The rest of the app keeps working.
-//
-//  mongodb  down → in-memory session/profile store used as fallback
-//  groq     down → /chat returns a friendly retry message over SSE
-//  tts      down → chat still works, responses delivered as text only
-//  stt      down → /stt returns error, UI disables mic button
 
 const serviceStatus = {
-  mongodb: { ok: false, error: null },
   groq: { ok: false, error: null },
   tts: { ok: false, error: null },
-  stt: { ok: false, error: null },
-};
-
-// ─── In-Memory Fallback Store ─────────────────────────────────────────────────
-// Used automatically when MongoDB is unavailable.
-// Data lives only for the server session — restarts clear it.
-
-const memoryStore = {
-  sessions: new Map(),
-  profiles: new Map(),
 };
 
 // ─── App Init ─────────────────────────────────────────────────────────────────
@@ -55,112 +35,39 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-const upload = multer({ storage: multer.memoryStorage() });
-
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
-const ttsClient = new textToSpeech.TextToSpeechClient();
-const sttClient = new speech.SpeechClient();
 
-// ─── MongoDB ──────────────────────────────────────────────────────────────────
+// ─── Google TTS via REST API Key ──────────────────────────────────────────────
 
-const sessionSchema = new mongoose.Schema({
-  session_id: { type: String, required: true, unique: true },
-  history: [{ role: String, content: String }],
-  updated_at: { type: Date, default: Date.now },
-});
-
-const profileSchema = new mongoose.Schema({
-  session_id: { type: String, required: true, unique: true },
-  name: { type: String, default: "" },
-  age: { type: Number, default: null },
-  hobbies: { type: [String], default: [] },
-  occupation: { type: String, default: "" },
-  updated_at: { type: Date, default: Date.now },
-});
-
-let Session, Profile;
-
-try {
-  await mongoose.connect(process.env.MONGODB_URI, {
-    serverSelectionTimeoutMS: 5000,
-  });
-  Session = mongoose.model("Session", sessionSchema);
-  Profile = mongoose.model("Profile", profileSchema);
-  serviceStatus.mongodb = { ok: true, error: null };
-  console.log("✅ MongoDB connected");
-} catch (err) {
-  serviceStatus.mongodb = {
-    ok: false,
-    error: "MongoDB unavailable — using in-memory store (data won't persist)",
+// Keep URL on v1 (not v1beta1)
+const GOOGLE_TTS_URL = "https://texttospeech.googleapis.com/v1/text:synthesize";
+async function synthesizeSentence(text) {
+  const body = {
+    input: { text },
+    voice: {
+      languageCode: process.env.TTS_LANGUAGE_CODE || "en-US",
+      name: process.env.TTS_VOICE_NAME || "en-US-Chirp3-HD-Charon",
+    },
+    audioConfig: { audioEncoding: "MP3" },
   };
-  console.warn("⚠️  MongoDB failed:", err.message);
-  console.warn(
-    "   Running with in-memory store — conversations won't persist across restarts.",
+
+  const response = await fetch(
+    `${GOOGLE_TTS_URL}?key=${process.env.GOOGLE_API_KEY}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
   );
-}
 
-// ─── DB Helpers (auto-fallback to memory) ────────────────────────────────────
-
-async function getHistory(sessionId) {
-  if (!serviceStatus.mongodb.ok)
-    return memoryStore.sessions.get(sessionId) || [];
-  try {
-    const doc = await Session.findOne({ session_id: sessionId });
-    return doc ? doc.history : [];
-  } catch {
-    return memoryStore.sessions.get(sessionId) || [];
+  if (!response.ok) {
+    const err = await response.json();
+    throw new Error(err.error?.message || "TTS request failed");
   }
-}
 
-async function saveHistory(sessionId, history) {
-  memoryStore.sessions.set(sessionId, history); // always save to memory as safety net
-  if (!serviceStatus.mongodb.ok) return;
-  try {
-    await Session.findOneAndUpdate(
-      { session_id: sessionId },
-      { history, updated_at: new Date() },
-      { upsert: true, new: true },
-    );
-  } catch {
-    /* memory already saved */
-  }
+  const data = await response.json();
+  return Buffer.from(data.audioContent, "base64");
 }
-
-async function getProfile(sessionId) {
-  if (!serviceStatus.mongodb.ok)
-    return memoryStore.profiles.get(sessionId) || null;
-  try {
-    const doc = await Profile.findOne({ session_id: sessionId });
-    return doc ? doc.toObject() : memoryStore.profiles.get(sessionId) || null;
-  } catch {
-    return memoryStore.profiles.get(sessionId) || null;
-  }
-}
-
-async function saveProfile(sessionId, profileData) {
-  memoryStore.profiles.set(sessionId, profileData);
-  if (!serviceStatus.mongodb.ok) return;
-  try {
-    await Profile.findOneAndUpdate(
-      { session_id: sessionId },
-      { ...profileData, updated_at: new Date() },
-      { upsert: true, new: true },
-    );
-  } catch {
-    /* memory already saved */
-  }
-}
-
-async function deleteSession(sessionId) {
-  memoryStore.sessions.delete(sessionId);
-  if (!serviceStatus.mongodb.ok) return;
-  try {
-    await Session.findOneAndDelete({ session_id: sessionId });
-  } catch {
-    /* silent */
-  }
-}
-
 // ─── Service Pings ────────────────────────────────────────────────────────────
 
 async function pingGroq() {
@@ -184,19 +91,23 @@ async function pingGroq() {
 
 async function pingGoogle() {
   try {
-    await ttsClient.listVoices({ languageCode: "en-US" });
+    const res = await fetch(
+      `https://texttospeech.googleapis.com/v1/voices?key=${process.env.GOOGLE_API_KEY}`,
+    );
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error?.message || "TTS ping failed");
+    }
     serviceStatus.tts = { ok: true, error: null };
-    serviceStatus.stt = { ok: true, error: null };
-    console.log("✅ Google Cloud connected");
+    console.log("✅ Google TTS connected (API key)");
   } catch (err) {
-    const msg = err.message.includes("Could not load the default credentials")
-      ? "google-credentials.json missing or invalid — check GOOGLE_APPLICATION_CREDENTIALS in .env"
+    const msg = err.message.includes("API_KEY_INVALID")
+      ? "Invalid GOOGLE_API_KEY — check your key in .env"
       : err.message.includes("PERMISSION_DENIED")
-        ? "Google APIs not enabled — enable Cloud TTS + STT in Google Cloud Console"
+        ? "Google TTS not enabled — enable Cloud Text-to-Speech API in Google Cloud Console"
         : err.message;
     serviceStatus.tts = { ok: false, error: msg };
-    serviceStatus.stt = { ok: false, error: msg };
-    console.warn("⚠️  Google check failed:", msg);
+    console.warn("⚠️  Google TTS check failed:", msg);
     console.warn(
       "   Chat still works — responses will be text-only without TTS.",
     );
@@ -206,7 +117,7 @@ async function pingGoogle() {
 await pingGroq();
 await pingGoogle();
 
-// Auto-recover: re-ping every 60s so fixing .env keys takes effect without restarting
+// Auto-recover every 60s
 setInterval(async () => {
   if (!serviceStatus.groq.ok) await pingGroq();
   if (!serviceStatus.tts.ok) await pingGoogle();
@@ -214,18 +125,21 @@ setInterval(async () => {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function buildSystemPrompt(profile) {
-  const profileBlock = profile
-    ? `The person you are talking to — Name: ${profile.name}, Age: ${profile.age}, Hobbies: ${(profile.hobbies || []).join(", ")}, Occupation: ${profile.occupation}. Weave this in naturally. Do not recite it. Reference their hobbies when relevant.`
-    : "You don't know much about this user yet. Be warm and curious.";
+function buildSystemPrompt(systemPrompt, userName) {
+  const base =
+    systemPrompt && systemPrompt.trim().length > 0
+      ? systemPrompt
+      : `You are Buddy — a warm, witty, genuinely curious AI companion. You speak like a smart friend, not an assistant. Relaxed, conversational, occasionally playful, never robotic. Keep responses to 2-4 sentences max.`;
 
-  return `You are Buddy — a warm, witty, genuinely curious AI companion. You speak like a smart friend, not an assistant. Relaxed, conversational, occasionally playful, never robotic. Keep responses to 2-4 sentences max.
+  const userLine =
+    userName && userName.trim().length > 0
+      ? `\n\nYou are talking to ${userName}.`
+      : "";
 
-${profileBlock}
+  return `${base}${userLine}
 
 IMPORTANT: Every response MUST end with exactly one emotion tag: [emotion:neutral] [emotion:happy] [emotion:sad] [emotion:curious] [emotion:smirk] [emotion:thinking]. Pick the one that best matches your mood. Place it at the very end.`;
 }
-
 function extractEmotion(text) {
   const match = text.match(/\[emotion:(\w+)\]/);
   return match ? match[1] : "neutral";
@@ -249,24 +163,10 @@ function popCompleteSentences(buffer) {
   return { sentences, remaining: buffer.slice(lastIndex) };
 }
 
-async function synthesizeSentence(text) {
-  const [response] = await ttsClient.synthesizeSpeech({
-    input: { text },
-    voice: {
-      languageCode: process.env.TTS_LANGUAGE_CODE || "en-US",
-      name: process.env.TTS_VOICE_NAME || "en-US-Neural2-D",
-      ssmlGender: "NEUTRAL",
-    },
-    audioConfig: { audioEncoding: "MP3" },
-  });
-  return response.audioContent;
-}
-
 function sendEvent(res, data) {
   res.write(`data: ${JSON.stringify(data)}\n\n`);
 }
 
-// Send one sentence — audio if TTS is healthy, text-only if it's down
 async function sendSentence(res, sentence, emotion) {
   if (serviceStatus.tts.ok) {
     try {
@@ -279,9 +179,7 @@ async function sendSentence(res, sentence, emotion) {
       });
       return;
     } catch (err) {
-      // TTS died mid-stream — mark down and fall through
       serviceStatus.tts = { ok: false, error: err.message };
-      serviceStatus.stt = { ok: false, error: err.message };
       console.warn("⚠️  TTS failed mid-stream:", err.message);
     }
   }
@@ -299,97 +197,18 @@ app.get("/health", (req, res) => {
   });
 });
 
-app.post("/profile", async (req, res) => {
-  const { session_id, ...profileData } = req.body;
-  if (!session_id)
-    return res.status(400).json({ error: "session_id required" });
-  try {
-    await saveProfile(session_id, profileData);
-    res.json({ ok: true, persisted: serviceStatus.mongodb.ok });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.get("/profile/:session_id", async (req, res) => {
-  try {
-    const profile = await getProfile(req.params.session_id);
-    if (!profile) return res.status(404).json({ error: "Profile not found" });
-    res.json(profile);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.delete("/session/:session_id", async (req, res) => {
-  try {
-    await deleteSession(req.params.session_id);
-    res.json({ ok: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.get("/history/:session_id", async (req, res) => {
-  try {
-    const history = await getHistory(req.params.session_id);
-    res.json({ session_id: req.params.session_id, history });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.post("/stt", upload.single("file"), async (req, res) => {
-  if (!req.file)
-    return res.status(400).json({ error: "No audio file provided" });
-
-  if (!serviceStatus.stt.ok) {
-    return res.status(503).json({
-      error: "STT unavailable",
-      detail: serviceStatus.stt.error,
-      fallback: "Type your message using the text input instead",
-    });
-  }
-
-  try {
-    const [response] = await sttClient.recognize({
-      audio: { content: req.file.buffer.toString("base64") },
-      config: {
-        encoding: "WEBM_OPUS",
-        sampleRateHertz: 48000,
-        languageCode: process.env.TTS_LANGUAGE_CODE || "en-US",
-        enableAutomaticPunctuation: true,
-      },
-    });
-    const transcript = response.results
-      .map((r) => r.alternatives[0].transcript)
-      .join(" ")
-      .trim();
-    res.json({ transcript });
-  } catch (err) {
-    serviceStatus.stt = { ok: false, error: err.message };
-    res.status(503).json({
-      error: "STT failed",
-      detail: err.message,
-      fallback: "Type your message using the text input instead",
-    });
-  }
-});
-
 app.post("/chat", async (req, res) => {
-  const { session_id, message } = req.body;
-  if (!session_id || !message) {
-    return res.status(400).json({ error: "session_id and message required" });
+  const { message, systemPrompt, userName } = req.body;
+  if (!message) {
+    return res.status(400).json({ error: "message required" });
   }
 
-  // Always open SSE stream first — even error messages go through it so the UI handles them uniformly
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("X-Accel-Buffering", "no");
   res.setHeader("Connection", "keep-alive");
   res.flushHeaders();
 
-  // Groq down — send a friendly in-chat message instead of crashing
   if (!serviceStatus.groq.ok) {
     sendEvent(res, {
       type: "service_down",
@@ -407,14 +226,8 @@ app.post("/chat", async (req, res) => {
     detectedEmotion = "neutral";
 
   try {
-    const [profile, history] = await Promise.all([
-      getProfile(session_id),
-      getHistory(session_id),
-    ]);
-
     const messages = [
-      { role: "system", content: buildSystemPrompt(profile) },
-      ...history.map((h) => ({ role: h.role, content: h.content })),
+      { role: "system", content: buildSystemPrompt(systemPrompt, userName) },
       { role: "user", content: message },
     ];
 
@@ -450,20 +263,11 @@ app.post("/chat", async (req, res) => {
     if (finalClean.length > 2)
       await sendSentence(res, finalClean, detectedEmotion);
 
-    // Save history — always works (memory fallback if MongoDB is down)
-    const updatedHistory = [
-      ...history,
-      { role: "user", content: message },
-      { role: "assistant", content: stripEmotion(fullText) },
-    ].slice(-20);
-    await saveHistory(session_id, updatedHistory);
-
     sendEvent(res, {
       type: "done",
       emotion: detectedEmotion,
       full_text: stripEmotion(fullText),
       tts_active: serviceStatus.tts.ok,
-      db_persisted: serviceStatus.mongodb.ok,
     });
   } catch (err) {
     console.error("Chat error:", err);
@@ -471,7 +275,6 @@ app.post("/chat", async (req, res) => {
     if (err.status === 401)
       serviceStatus.groq = { ok: false, error: "Invalid Groq API key" };
 
-    // Friendly messages — never expose raw stack traces to the client
     const friendly =
       err.status === 401
         ? "There's an issue with my API key. Please check the server config."
@@ -490,9 +293,6 @@ app.post("/chat", async (req, res) => {
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`\n🤖 Buddy server running at http://localhost:${PORT}`);
-  console.log(
-    `   MongoDB : ${serviceStatus.mongodb.ok ? "✅ connected" : "⚠️  in-memory fallback"}`,
-  );
   console.log(
     `   Groq    : ${serviceStatus.groq.ok ? "✅ connected" : "⚠️  unavailable"}`,
   );
