@@ -11,6 +11,7 @@ import {
   sendSentence,
   extractEmotion,
   stripEmotion,
+  stripGesture,
   popCompleteSentences,
 } from "../utils/stream.js";
 import { config } from "../config/index.js";
@@ -25,7 +26,12 @@ function buildSystemPrompt(character, userName) {
 
   return `${character.systemPrompt}${userLine}
 
-IMPORTANT: Every response MUST end with exactly one emotion tag: [emotion:neutral] [emotion:happy] [emotion:sad] [emotion:curious] [emotion:smirk] [emotion:thinking]. Pick the one that best matches your mood. Place it at the very end.`;
+IMPORTANT: Start every sentence with exactly one gesture tag that fits the sentence's tone.
+Available gestures: [acknowledging] [angry_gesture] [annoyed_head] [being_cocky] [dismissing_gesture] [happy_hand_gesture] [hard_head_nod] [head_nod_yes] [lengthy_head_movement] [look_away_gesture] [relieved_sigh] [sarcastic_head_nod] [shaking_head] [thoughtful_head_shake] [weight_shift]
+
+Example:
+[head_nod_yes] That makes sense.
+[thoughtful_head_shake] Though I'm not entirely sure about that part.`;
 }
 
 // ─── Load recent session memory from MongoDB ──────────────────────────────────
@@ -140,19 +146,23 @@ router.post("/chat", validateChatRequest, async (req, res) => {
       buffer = remaining;
 
       for (const sentence of sentences) {
-        const clean = stripEmotion(sentence);
+        const clean = stripEmotion(sentence); // strip emotion for length check only
         if (!clean || clean.length < 3) continue;
-        await sendSentence(res, clean, detectedEmotion, character.ttsVoice);
+        await sendSentence(res, sentence, detectedEmotion, character.ttsVoice); // ← raw, not clean
       }
     }
 
     // Flush remaining buffer
     const finalClean = stripEmotion(buffer).trim();
     if (finalClean.length > 2) {
-      await sendSentence(res, finalClean, detectedEmotion, character.ttsVoice);
+      await sendSentence(
+        res,
+        buffer.trim(),
+        detectedEmotion,
+        character.ttsVoice,
+      ); // ← raw buffer
     }
-
-    const fullReply = stripEmotion(fullText);
+    const fullReply = stripGesture(stripEmotion(fullText)); // clean for DB storage
 
     sendEvent(res, {
       type: "done",

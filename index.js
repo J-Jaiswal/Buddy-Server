@@ -4,10 +4,20 @@ import cors from "cors";
 import { config } from "./config/index.js"; // ← ./
 import { connectMongo } from "./db/mongo.js"; // ← ./
 import { pingGroq } from "./services/groq.js"; // ← ./
-import { pingGoogle } from "./services/tts.js"; // ← ./
+// import { pingGoogle } from "./services/tts.js"; // ← ./
 import { serviceStatus } from "./services/serviceStatus.js"; // ← ./
 import healthRouter from "./routes/health.js"; // ← ./
 import chatRouter from "./routes/chat.js"; // ← ./
+import { pingTTS } from "./services/tts.js"; // was pingGoogle
+
+// startup
+await pingTTS();
+
+// auto-recover
+setInterval(async () => {
+  if (!serviceStatus.groq.ok) await pingGroq();
+  if (!serviceStatus.tts.ok) await pingTTS(); // was pingGoogle
+}, 60_000);
 
 const app = express();
 app.use(cors());
@@ -20,12 +30,13 @@ app.use(chatRouter);
 // ─── Startup ──────────────────────────────────────────────────────────────────
 await connectMongo();
 await pingGroq();
-await pingGoogle();
+await pingTTS();
+// await pingGoogle();
 
 // Auto-recover degraded services every 60s
 setInterval(async () => {
   if (!serviceStatus.groq.ok) await pingGroq();
-  if (!serviceStatus.tts.ok) await pingGoogle();
+  if (!serviceStatus.tts.ok) await pingTTS(); // was pingGoogle
 }, 60_000);
 
 app.listen(config.port, () => {

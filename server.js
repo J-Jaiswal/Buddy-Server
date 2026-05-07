@@ -4,6 +4,7 @@ import express from "express";
 import cors from "cors";
 import Groq from "groq-sdk";
 import dotenv from "dotenv";
+import { createClient } from "@deepgram/sdk";
 
 dotenv.config();
 
@@ -11,8 +12,12 @@ dotenv.config();
 
 const REQUIRED_KEYS = {
   GROQ_API_KEY: "Groq API key (console.groq.com)",
-  GOOGLE_API_KEY:
-    "Google Cloud API key (console.cloud.google.com → APIs & Services → Credentials)",
+  ...(process.env.TTS_PROVIDER === "google" && {
+    GOOGLE_API_KEY: "Google Cloud API key",
+  }),
+  ...(process.env.TTS_PROVIDER === "deepgram" && {
+    DEEPGRAM_API_KEY: "Deepgram API key",
+  }),
 };
 
 for (const [key, hint] of Object.entries(REQUIRED_KEYS)) {
@@ -36,12 +41,13 @@ app.use(cors());
 app.use(express.json());
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+const deepgram = createClient(process.env.DEEPGRAM_API_KEY);
 
 // ─── Google TTS via REST API Key ──────────────────────────────────────────────
 
 // Keep URL on v1 (not v1beta1)
 const GOOGLE_TTS_URL = "https://texttospeech.googleapis.com/v1/text:synthesize";
-async function synthesizeSentence(text) {
+async function synthesizeWithGoogle(text) {
   const body = {
     input: { text },
     voice: {
@@ -62,11 +68,38 @@ async function synthesizeSentence(text) {
 
   if (!response.ok) {
     const err = await response.json();
-    throw new Error(err.error?.message || "TTS request failed");
+    throw new Error(err.error?.message || "Google TTS failed");
   }
 
   const data = await response.json();
   return Buffer.from(data.audioContent, "base64");
+}
+
+async function synthesizeWithDeepgram(text) {
+  const response = await deepgram.speak.request(
+    { text },
+    {
+      model: "aura-asteria-en",
+      encoding: "mp3",
+    },
+  );
+
+  const audioBuffer = Buffer.from(await response.arrayBuffer());
+  return audioBuffer;
+}
+
+async function synthesizeSentence(text) {
+  const provider = process.env.TTS_PROVIDER || "deepgram";
+
+  if (provider === "google") {
+    return await synthesizeWithGoogle(text);
+  }
+
+  if (provider === "deepgram") {
+    return await synthesizeWithDeepgram(text);
+  }
+  console.log("🎤 TTS provider used:", process.env.TTS_PROVIDER);
+  throw new Error(`Unknown TTS provider: ${provider}`);
 }
 // ─── Service Pings ────────────────────────────────────────────────────────────
 
@@ -89,38 +122,53 @@ async function pingGroq() {
   }
 }
 
+async function pingDeepgram() {
+  const res = await fetch("https://api.deepgram.com/v1/projects", {
+    headers: {
+      Authorization: `Token ${process.env.DEEPGRAM_API_KEY}`,
+    },
+  });
+
+  if (!res.ok) throw new Error("Deepgram ping failed");
+}
 async function pingGoogle() {
-  try {
-    const res = await fetch(
-      `https://texttospeech.googleapis.com/v1/voices?key=${process.env.GOOGLE_API_KEY}`,
-    );
-    if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.error?.message || "TTS ping failed");
-    }
-    serviceStatus.tts = { ok: true, error: null };
-    console.log("✅ Google TTS connected (API key)");
-  } catch (err) {
-    const msg = err.message.includes("API_KEY_INVALID")
-      ? "Invalid GOOGLE_API_KEY — check your key in .env"
-      : err.message.includes("PERMISSION_DENIED")
-        ? "Google TTS not enabled — enable Cloud Text-to-Speech API in Google Cloud Console"
-        : err.message;
-    serviceStatus.tts = { ok: false, error: msg };
-    console.warn("⚠️  Google TTS check failed:", msg);
-    console.warn(
-      "   Chat still works — responses will be text-only without TTS.",
-    );
+  const res = await fetch(
+    `https://texttospeech.googleapis.com/v1/voices?key=${process.env.GOOGLE_API_KEY}`,
+  );
+
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.error?.message || "Google TTS failed");
   }
 }
 
+async function pingTTS() {
+  const provider = process.env.TTS_PROVIDER || "deepgram";
+
+  try {
+    if (provider === "google") {
+      await pingGoogle();
+    } else if (provider === "deepgram") {
+      await pingDeepgram();
+    } else {
+      throw new Error(`Unknown TTS provider: ${provider}`);
+    }
+
+    serviceStatus.tts = { ok: true, error: null };
+    console.log("👉 Using TTS Provider:", provider);
+    console.log(`✅ ${provider} TTS connected`);
+  } catch (err) {
+    serviceStatus.tts = { ok: false, error: err.message };
+    console.warn("⚠️ TTS check failed:", err.message);
+  }
+}
 await pingGroq();
-await pingGoogle();
+await pingTTS();
 
 // Auto-recover every 60s
 setInterval(async () => {
   if (!serviceStatus.groq.ok) await pingGroq();
-  if (!serviceStatus.tts.ok) await pingGoogle();
+  if (!serviceStatus.tts.ok) await pingTTS();
 }, 60_000);
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -297,6 +345,8 @@ app.listen(PORT, () => {
     `   Groq    : ${serviceStatus.groq.ok ? "✅ connected" : "⚠️  unavailable"}`,
   );
   console.log(
-    `   Google  : ${serviceStatus.tts.ok ? "✅ connected" : "⚠️  text-only mode"}\n`,
+    `   TTS (${process.env.TTS_PROVIDER || "deepgram"}) : ${
+      serviceStatus.tts.ok ? "✅ connected" : "⚠️ text-only mode"
+    }\n`,
   );
 });
