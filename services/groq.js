@@ -38,4 +38,4 @@ export async function streamChat(messages) {
   });
 }
 
-export { groq };
+export { groq as groqClient };

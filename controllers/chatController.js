@@ -1,21 +1,24 @@
 // controllers/chatController.js
 // Owns the SSE lifecycle and orchestrates memory → LLM → pipeline → drain.
 
-// import { streamChat } from "../services/groq.js";
+import { streamChat, groqClient } from "../services/groq.js";
 import { serviceStatus, setStatus } from "../services/serviceStatus.js";
 import { resolveCharacter } from "../characters/registry.js";
 import { ChatHistory } from "../models/ChatHistory.js";
 import { sendEvent } from "../utils/stream.js";
 import { loadSessionMemory, persistTurn } from "../pipeline/memoryPipeline.js";
 import { createTtsPipeline } from "../pipeline/ttsPipeline.js";
-import { popCompleteSentences } from "../utils/stream.js";
+import { popCompleteSentences } from "../utils/sentenceProcessor.js";
 import { config } from "../config/index.js";
 
 // ── System prompt ─────────────────────────────────────────────────────────────
 
-function buildSystemPrompt(character) {
-  return `${character.systemPrompt}
+function buildSystemPrompt(character, userName) {
+  const nameInstruction = userName?.trim()
+    ? `\nThe user's name is "${userName.trim()}". Use it naturally and sparingly — only when it feels genuinely warm or relevant (e.g. greeting them, or if they ask). Do NOT pepper every response with their name.`
+    : "";
 
+  return `${character.systemPrompt}${nameInstruction}
 Speak naturally and conversationally.
 Keep sentences relatively short — ideally under 20 words each.
 Do NOT include any gesture tags, brackets, labels, or formatting markers.
@@ -25,7 +28,7 @@ Just say what you want to say in plain text.`;
 // ── POST /chat ────────────────────────────────────────────────────────────────
 
 export async function handleChat(req, res) {
-  const { message, userId, characterId } = req.body;
+  const { message, userId, characterId, userName } = req.body;
   const character = resolveCharacter(characterId);
 
   // SSE setup
@@ -46,7 +49,7 @@ export async function handleChat(req, res) {
     return res.end();
   }
 
-  const pipeline = createTtsPipeline(res, character);
+  const pipeline = createTtsPipeline(res, character, groqClient);
   let fullText = "";
   let buffer = "";
 
@@ -54,7 +57,7 @@ export async function handleChat(req, res) {
     const memoryMessages = await loadSessionMemory(userId, character.id);
 
     const messages = [
-      { role: "system", content: buildSystemPrompt(character) },
+      { role: "system", content: buildSystemPrompt(character, userName) },
       ...memoryMessages,
       { role: "user", content: message },
     ];
