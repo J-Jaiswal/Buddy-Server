@@ -14,6 +14,30 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// ─── Root Status Page ─────────────────────────────────────────────────────────
+app.get("/", (req, res) => {
+  const status = {
+    server: "online",
+    timestamp: new Date().toISOString(),
+    services: {
+      groq: serviceStatus.groq.ok
+        ? { status: "connected" }
+        : { status: "degraded", error: serviceStatus.groq.error },
+      tts: serviceStatus.tts.ok
+        ? { status: "connected" }
+        : { status: "degraded", mode: "text-only" },
+      mongo: serviceStatus.mongo.ok
+        ? { status: "connected" }
+        : { status: "degraded", mode: "history disabled" },
+    },
+  };
+
+  const allOk =
+    serviceStatus.groq.ok && serviceStatus.tts.ok && serviceStatus.mongo.ok;
+
+  res.status(allOk ? 200 : 207).json(status);
+});
+
 // ─── Routes ───────────────────────────────────────────────────────────────────
 app.use(healthRouter);
 app.use(chatRouter);
