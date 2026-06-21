@@ -294,6 +294,3 @@ Failed services are **automatically retried every 60 seconds** without restartin
 
 ---
 
-## License
-
-MIT
